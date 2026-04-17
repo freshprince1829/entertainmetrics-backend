@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from .database import Base, engine, get_db
 from . import schemas, crud
@@ -7,10 +8,23 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="EntertainMetrics API")
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 @app.get("/")
 def root():
     return {"message": "EntertainMetrics backend is running"}
+
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok", "service": "EntertainMetrics API"}
 
 
 @app.post("/events", response_model=schemas.EventResponse)
@@ -48,3 +62,8 @@ def predict_event(data: schemas.PredictionRequest, db: Session = Depends(get_db)
     crud.create_prediction(db, prediction_record)
 
     return prediction_record
+
+
+@app.get("/predictions")
+def list_predictions(db: Session = Depends(get_db)):
+    return crud.get_predictions(db)

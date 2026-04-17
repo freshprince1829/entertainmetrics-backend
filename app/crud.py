@@ -20,3 +20,7 @@ def create_prediction(db: Session, prediction_data: dict):
     db.commit()
     db.refresh(db_prediction)
     return db_prediction
+
+
+def get_predictions(db: Session):
+    return db.query(models.Prediction).order_by(models.Prediction.id.desc()).all()
