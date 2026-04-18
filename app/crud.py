@@ -1,5 +1,6 @@
 from collections.abc import Mapping
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from . import models, schemas
@@ -67,3 +68,50 @@ def create_prediction(
 
 def get_predictions(db: Session):
     return db.query(models.Prediction).order_by(models.Prediction.id.desc()).all()
+
+
+def get_dashboard_summary(db: Session):
+    summary = (
+        db.query(
+            db.query(func.count(models.Event.id)).scalar_subquery().label("total_events"),
+            db.query(func.count(models.Artist.id))
+            .scalar_subquery()
+            .label("total_artists"),
+            db.query(func.count(models.Prediction.id))
+            .scalar_subquery()
+            .label("total_predictions"),
+            db.query(func.coalesce(func.avg(models.Prediction.predicted_attendance), 0.0))
+            .scalar_subquery()
+            .label("average_predicted_attendance"),
+            db.query(func.coalesce(func.avg(models.Prediction.predicted_revenue), 0.0))
+            .scalar_subquery()
+            .label("average_predicted_revenue"),
+        )
+        .one()
+    )
+
+    return {
+        "total_events": summary.total_events,
+        "total_artists": summary.total_artists,
+        "total_predictions": summary.total_predictions,
+        "average_predicted_attendance": float(summary.average_predicted_attendance),
+        "average_predicted_revenue": float(summary.average_predicted_revenue),
+    }
+
+
+def get_recent_events(db: Session, limit: int = 5):
+    return (
+        db.query(models.Event)
+        .order_by(models.Event.created_at.desc(), models.Event.id.desc())
+        .limit(limit)
+        .all()
+    )
+
+
+def get_recent_predictions(db: Session, limit: int = 5):
+    return (
+        db.query(models.Prediction)
+        .order_by(models.Prediction.created_at.desc(), models.Prediction.id.desc())
+        .limit(limit)
+        .all()
+    )

@@ -208,3 +208,30 @@ def list_predictions(db: Session = Depends(get_db)):
         return crud.get_predictions(db)
     except SQLAlchemyError as error:
         _rollback_and_raise(db, 500, "An unexpected database error occurred", error)
+
+
+@app.get("/dashboard/summary", response_model=schemas.DashboardSummaryResponse)
+def get_dashboard_summary(db: Session = Depends(get_db)):
+    try:
+        return crud.get_dashboard_summary(db)
+    except SQLAlchemyError as error:
+        _rollback_and_raise(db, 500, "An unexpected database error occurred", error)
+
+
+@app.get("/dashboard/recent-events", response_model=list[schemas.RecentEventResponse])
+def get_recent_events(limit: int = 5, db: Session = Depends(get_db)):
+    try:
+        return crud.get_recent_events(db, limit=limit)
+    except SQLAlchemyError as error:
+        _rollback_and_raise(db, 500, "An unexpected database error occurred", error)
+
+
+@app.get(
+    "/dashboard/recent-predictions",
+    response_model=list[schemas.RecentPredictionResponse],
+)
+def get_recent_predictions(limit: int = 5, db: Session = Depends(get_db)):
+    try:
+        return crud.get_recent_predictions(db, limit=limit)
+    except SQLAlchemyError as error:
+        _rollback_and_raise(db, 500, "An unexpected database error occurred", error)

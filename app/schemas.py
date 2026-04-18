@@ -98,3 +98,40 @@ class PredictionResponse(BaseModel):
     model_version: str | None = None
     insight_summary: str | None = None
     created_at: datetime
+
+class DashboardSummaryResponse(BaseModel):
+    total_events: int
+    total_artists: int
+    total_predictions: int
+    average_predicted_attendance: float
+    average_predicted_revenue: float
+
+
+class RecentEventResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    event_name: str
+    event_type: str
+    event_date: date
+    venue: str
+    city: str
+    ticket_price: float
+    marketing_spend: float
+    capacity: int
+    actual_attendance: int | None = None
+    revenue: float | None = None
+    created_at: datetime
+
+
+class RecentPredictionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    event_id: int
+    predicted_attendance: int
+    predicted_revenue: float
+    confidence_score: float
+    model_version: str | None = None
+    insight_summary: str | None = None
+    created_at: datetime
