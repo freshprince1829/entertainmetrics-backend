@@ -36,6 +36,66 @@ def _calculate_artist_strength_total(event: models.Event) -> float:
     return total
 
 
+def _get_linked_artists(event: models.Event) -> list[models.Artist]:
+    return [
+        lineup_entry.artist
+        for lineup_entry in event.lineup
+        if lineup_entry.artist is not None
+    ]
+
+
+def _calculate_artist_metric_completeness(artists: list[models.Artist]) -> float:
+    if not artists:
+        return 0.0
+
+    total_possible_fields = len(artists) * 3
+    total_filled_fields = 0
+
+    for artist in artists:
+        for metric in (
+            artist.engagement_score,
+            artist.headline_score,
+            artist.market_strength_score,
+        ):
+            if metric is not None:
+                total_filled_fields += 1
+
+    return total_filled_fields / total_possible_fields
+
+
+def _calculate_confidence_score(
+    ticket_price: float,
+    marketing_spend: float,
+    capacity: int,
+    linked_artist_count: int,
+    completeness_ratio: float,
+) -> float:
+
+    score = 0.5  # base confidence
+
+    # Artist presence boost
+    if linked_artist_count > 0:
+        score += min(linked_artist_count * 0.05, 0.2)
+
+    # Data completeness boost
+    score += completeness_ratio * 0.2
+
+    # Marketing signal
+    if marketing_spend > 0:
+        score += 0.05
+
+    # Ticket price sanity
+    if 500 <= ticket_price <= 10000:
+        score += 0.05
+
+    # Capacity sanity
+    if capacity > 0:
+        score += 0.05
+
+    # Clamp between 0.3 and 0.95
+    return max(0.3, min(score, 0.95))
+
+
 def _constraint_name(error: IntegrityError) -> str | None:
     diag = getattr(getattr(error, "orig", None), "diag", None)
     return getattr(diag, "constraint_name", None)
@@ -160,26 +220,50 @@ def predict_event(data: schemas.PredictionRequest, db: Session = Depends(get_db)
         if event is None:
             raise HTTPException(status_code=404, detail="Event not found")
 
-        artist_strength_total = _calculate_artist_strength_total(event)
+        linked_artists = _get_linked_artists(event)
+        linked_artist_count = len(linked_artists)
+        artist_strength_total = (
+            _calculate_artist_strength_total(event) if linked_artist_count > 0 else 0.0
+        )
+        completeness_ratio = _calculate_artist_metric_completeness(linked_artists)
+        confidence_score = _calculate_confidence_score(
+            ticket_price=data.ticket_price,
+            marketing_spend=data.marketing_spend,
+            capacity=data.capacity,
+            linked_artist_count=linked_artist_count,
+            completeness_ratio=completeness_ratio,
+        )
+
+        attendance_estimate = (
+            (data.capacity * 0.4)
+            + (data.marketing_spend / 50)
+            - (data.ticket_price / 20)
+        )
+        if linked_artist_count > 0:
+            attendance_estimate += artist_strength_total * 10
+
         predicted_attendance = int(
             min(
                 data.capacity,
-                (data.capacity * 0.4)
-                + (data.marketing_spend / 50)
-                + (artist_strength_total * 10)
-                - (data.ticket_price / 20),
+                attendance_estimate,
             )
         )
         predicted_attendance = max(predicted_attendance, 0)
 
         predicted_revenue = round(predicted_attendance * data.ticket_price, 2)
-        confidence_score = 0.78
         model_version = "v1-rule-based"
-        insight_summary = (
-            f"Rule-based estimate using {len(event.lineup)} linked artists with a total "
-            f"strength score of {artist_strength_total:.2f}, plus pricing, marketing, "
-            "and venue capacity."
-        )
+        if linked_artist_count > 0:
+            insight_summary = (
+                f"Rule-based estimate using {linked_artist_count} linked artists with "
+                f"an artist strength total of {artist_strength_total:.2f}. Dynamic "
+                f"confidence score is {confidence_score:.2f}."
+            )
+        else:
+            insight_summary = (
+                "Lineup data was not linked, so artist influence was excluded from the "
+                f"prediction. Dynamic confidence score is {confidence_score:.2f}, and "
+                "confidence is lower because lineup data is missing."
+            )
 
         prediction_record = {
             "event_id": data.event_id,
@@ -235,3 +319,4 @@ def get_recent_predictions(limit: int = 5, db: Session = Depends(get_db)):
         return crud.get_recent_predictions(db, limit=limit)
     except SQLAlchemyError as error:
         _rollback_and_raise(db, 500, "An unexpected database error occurred", error)
+
